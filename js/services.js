@@ -173,17 +173,25 @@ const ClientesService = {
   },
 
   async excluir(id) {
-    const url = `${AZURE_CONFIG.tableEndpoint}/Clientes(PartitionKey='Cliente',RowKey='${encodeURIComponent(id)}')?${AZURE_CONFIG.sasToken}`;
-    await fetch(url, {
-      method: 'DELETE',
-      headers: { 'x-ms-version': '2020-12-06', 'x-ms-date': new Date().toUTCString(), 'If-Match': '*' },
-    });
-  },
+    const prod = await this.buscarPorId(id);
+    if (!prod) throw new Error("Produto não encontrado");
 
-  async historicoPedidos(clienteId) {
-    return tableQuery('Pedidos', `ClienteId eq '${clienteId}'`);
+    const url = `${AZURE_CONFIG.tableEndpoint}/Produtos(PartitionKey='${encodeURIComponent(prod.PartitionKey)}',RowKey='${encodeURIComponent(id)}')?${AZURE_CONFIG.sasToken}`;
+
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        "x-ms-version": "2020-12-06",
+        "x-ms-date": new Date().toUTCString(),
+        "If-Match": "*",
+      },
+    });
+
+    if (!res.ok && res.status !== 204) {
+      const err = await res.text();
+      throw new Error(`Delete falhou: ${res.status} - ${err}`);
+    }
   },
-};
 
 // ── PEDIDOS ───────────────────────────────────────────────────────────────────
 
