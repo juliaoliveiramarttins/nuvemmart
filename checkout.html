@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout — NuvemMart</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper">
+    <div class="container">
+      <div class="page-header mt-2">
+        <h2>Finalizar Compra</h2>
+        <a href="produtos.html" class="btn btn-ghost btn-sm">← Continuar comprando</a>
+      </div>
+
+      <div id="checkout-content">
+        <div style="text-align:center;padding:64px"><div class="loader" style="border-top-color:var(--accent3)"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="success-modal" class="modal-overlay">
+    <div class="modal" style="max-width:440px;text-align:center">
+      <div class="modal-body" style="padding:40px;gap:24px">
+        <div style="font-size:4rem">🎉</div>
+        <h3 style="font-family:var(--font-display);font-size:2rem">Pedido confirmado!</h3>
+        <p class="text-muted">Seu pedido foi realizado com sucesso. Você pode acompanhá-lo na sua conta.</p>
+        <div id="order-id-display" style="font-family:var(--font-mono);font-size:0.85rem;color:var(--accent3);background:var(--bg);padding:8px 16px;border-radius:var(--radius-sm)"></div>
+        <button class="btn btn-primary btn-full" onclick="location.href='minha-conta.html'">Ver pedidos →</button>
+        <button class="btn btn-ghost btn-full" onclick="location.href='index.html'">Início</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/azure-config.js"></script>
+  <script src="js/services.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    renderHeader(false);
+    let selectedPayment = 'pix';
+    let selectedDelivery = 'pac';
+    const deliveryCosts = { pac: 15.90, sedex: 35.90, retirada: 0 };
+
+    async function renderCheckout() {
+      const cart = CartService.get();
+      if (cart.length === 0) { location.href = 'produtos.html'; return; }
+
+      const cliente = SessionService.getCliente();
+      const content = document.getElementById('checkout-content');
+
+      const paymentOpts = [
+        { id: 'pix', icon: '⚡', name: 'PIX', desc: 'Desconto de 5% • Aprovação imediata' },
+        { id: 'cartao', icon: '💳', name: 'Cartão de Crédito', desc: 'Até 12x sem juros' },
+        { id: 'boleto', icon: '📄', name: 'Boleto Bancário', desc: 'Vencimento em 3 dias úteis' },
+      ];
+      const deliveryOpts = [
+        { id: 'pac', icon: '📦', name: 'PAC', desc: '5 a 8 dias úteis • R$ 15,90' },
+        { id: 'sedex', icon: '🚀', name: 'SEDEX', desc: '1 a 3 dias úteis • R$ 35,90' },
+        { id: 'retirada', icon: '🏪', name: 'Retirada', desc: 'Grátis • Disponível em 2 dias' },
+      ];
+
+      const loginSection = !cliente ? `
+        <div class="checkout-section">
+          <h3>Identificação</h3>
+          <div class="alert alert-info" style="margin-bottom:16px">ℹ️ Faça login para agilizar o checkout com seus dados salvos.</div>
+          <div class="form-row cols-2">
+            <div class="form-group"><label>Nome *</label><input type="text" id="guest-nome" placeholder="Seu nome"></div>
+            <div class="form-group"><label>E-mail *</label><input type="email" id="guest-email" placeholder="seu@email.com"></div>
+          </div>
+          <div class="form-group mt-2"><label>Endereço de entrega *</label><input type="text" id="guest-end" placeholder="Rua, número, bairro, cidade"></div>
+          <div class="mt-2"><a href="login.html" class="btn btn-ghost btn-sm">Tenho uma conta → Entrar</a></div>
+        </div>` : `
+        <div class="checkout-section">
+          <h3>Dados do cliente</h3>
+          <div style="display:flex;gap:16px;align-items:center">
+            <div class="user-avatar" style="width:48px;height:48px;font-size:1.3rem;flex-shrink:0">${cliente.Nome?.[0] || '?'}</div>
+            <div>
+              <div style="font-weight:600">${cliente.Nome}</div>
+              <div class="text-muted text-sm">${cliente.Email}</div>
+              ${cliente.Endereco ? `<div class="text-muted text-sm">${cliente.Endereco}${cliente.Cidade ? ', ' + cliente.Cidade : ''}</div>` : ''}
+            </div>
+          </div>
+          ${!cliente.Endereco ? `<div class="form-group mt-2"><label>Endereço de entrega *</label><input type="text" id="guest-end" placeholder="Rua, número, bairro, cidade" value="${cliente.Endereco||''}"></div>` : ''}
+        </div>`;
+
+      content.innerHTML = `
+        <div class="checkout-grid">
+          <div>
+            ${loginSection}
+            <div class="checkout-section">
+              <h3>Método de pagamento</h3>
+              <div class="payment-options" id="payment-opts">
+                ${paymentOpts.map(o => `
+                  <div class="option-card ${o.id === selectedPayment ? 'selected' : ''}" onclick="selectOpt('pay','${o.id}',this)">
+                    <input type="radio" name="payment" value="${o.id}" ${o.id === selectedPayment ? 'checked' : ''}>
+                    <span class="option-icon">${o.icon}</span>
+                    <div class="option-info"><div class="option-name">${o.name}</div><div class="option-desc">${o.desc}</div></div>
+                  </div>`).join('')}
+              </div>
+            </div>
+            <div class="checkout-section">
+              <h3>Método de entrega</h3>
+              <div class="delivery-options" id="delivery-opts">
+                ${deliveryOpts.map(o => `
+                  <div class="option-card ${o.id === selectedDelivery ? 'selected' : ''}" onclick="selectOpt('del','${o.id}',this)">
+                    <input type="radio" name="delivery" value="${o.id}" ${o.id === selectedDelivery ? 'checked' : ''}>
+                    <span class="option-icon">${o.icon}</span>
+                    <div class="option-info"><div class="option-name">${o.name}</div><div class="option-desc">${o.desc}</div></div>
+                  </div>`).join('')}
+              </div>
+            </div>
+            <div id="checkout-error"></div>
+            <button class="btn btn-primary btn-lg btn-full" onclick="placeOrder()">Confirmar Pedido →</button>
+          </div>
+          <div class="order-summary">
+            <div class="checkout-section">
+              <h3>Resumo do pedido</h3>
+              ${cart.map(i => `
+                <div class="summary-item">
+                  <span>${i.nome} × ${i.quantidade}</span>
+                  <span>${formatCurrency(i.valor * i.quantidade)}</span>
+                </div>`).join('')}
+              <div class="summary-item">
+                <span class="text-muted">Subtotal</span>
+                <span>${formatCurrency(CartService.total())}</span>
+              </div>
+              <div class="summary-item" id="frete-line">
+                <span class="text-muted">Frete</span>
+                <span id="frete-val">${formatCurrency(deliveryCosts[selectedDelivery])}</span>
+              </div>
+              <div class="summary-total">
+                <span class="summary-total-label">Total</span>
+                <span class="summary-total-value" id="total-final">${formatCurrency(CartService.total() + deliveryCosts[selectedDelivery])}</span>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function selectOpt(type, id, el) {
+      if (type === 'pay') {
+        selectedPayment = id;
+        document.querySelectorAll('#payment-opts .option-card').forEach(c => c.classList.remove('selected'));
+      } else {
+        selectedDelivery = id;
+        document.querySelectorAll('#delivery-opts .option-card').forEach(c => c.classList.remove('selected'));
+        const frete = deliveryCosts[id];
+        document.getElementById('frete-val').textContent = frete === 0 ? 'Grátis' : formatCurrency(frete);
+        document.getElementById('total-final').textContent = formatCurrency(CartService.total() + frete);
+      }
+      el.classList.add('selected');
+    }
+
+    async function placeOrder() {
+      const cliente = SessionService.getCliente();
+      const endEl = document.getElementById('guest-end');
+      const nomeEl = document.getElementById('guest-nome');
+      const emailEl = document.getElementById('guest-email');
+      const errEl = document.getElementById('checkout-error');
+      errEl.innerHTML = '';
+
+      const endereco = (cliente?.Endereco ? `${cliente.Endereco}${cliente.Cidade ? ', '+cliente.Cidade : ''}` : '') || endEl?.value || '';
+      const nome = cliente?.Nome || nomeEl?.value || '';
+      if (!nome) { errEl.innerHTML = `<div class="alert alert-error mb-2">Informe seu nome.</div>`; return; }
+      if (!endereco && selectedDelivery !== 'retirada') { errEl.innerHTML = `<div class="alert alert-error mb-2">Informe o endereço de entrega.</div>`; return; }
+
+      const cart = CartService.get();
+      const frete = deliveryCosts[selectedDelivery];
+      const discount = selectedPayment === 'pix' ? CartService.total() * 0.05 : 0;
+      const total = CartService.total() + frete - discount;
+
+      showLoader('Processando pedido...');
+      try {
+        await initStorage();
+        const pedido = await PedidosService.criar({
+          clienteId: cliente?.RowKey || 'guest',
+          clienteNome: nome,
+          itens: cart.map(i => ({ produtoId: i.produtoId, nome: i.nome, valor: i.valor, quantidade: i.quantidade })),
+          total,
+          metodoPagamento: selectedPayment,
+          metodoEntrega: selectedDelivery,
+          endereco,
+        });
+        CartService.clear();
+        document.getElementById('order-id-display').textContent = `Pedido: ${pedido.RowKey}`;
+        openModal('success-modal');
+      } catch(e) {
+        errEl.innerHTML = `<div class="alert alert-error mt-2">⚠️ ${e.message}</div>`;
+      } finally { hideLoader(); }
+    }
+
+    initStorage().then(renderCheckout);
+  </script>
+</body>
+</html>

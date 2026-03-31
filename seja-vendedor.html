@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seja Vendedor — NuvemMart</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper">
+    <div class="container">
+      <!-- Hero vendedor -->
+      <div style="text-align:center;padding:48px 24px 40px;background:linear-gradient(135deg,#f5f3ff,#ede9fe);border-radius:var(--radius);margin-bottom:32px;border:1px solid var(--seller-border)">
+        <div style="font-size:3.5rem;margin-bottom:12px">🏪</div>
+        <h1 style="color:var(--seller);margin-bottom:10px">Seja um Vendedor NuvemMart</h1>
+        <p style="color:var(--text2);font-size:1.05rem;max-width:480px;margin:0 auto 24px">Anuncie seus produtos para milhares de compradores. Cadastro gratuito, sem mensalidade.</p>
+        <div id="cta-area">
+          <div style="text-align:center;padding:20px"><div class="loader" style="border-top-color:var(--seller)"></div></div>
+        </div>
+      </div>
+
+      <!-- Benefícios -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:40px">
+        <div class="card card-body" style="text-align:center">
+          <div style="font-size:2rem;margin-bottom:8px">⚡</div>
+          <h3 style="font-size:1rem;margin-bottom:6px">Ativação imediata</h3>
+          <p class="text-muted text-sm">Com um clique você já pode começar a anunciar produtos.</p>
+        </div>
+        <div class="card card-body" style="text-align:center">
+          <div style="font-size:2rem;margin-bottom:8px">☁️</div>
+          <h3 style="font-size:1rem;margin-bottom:6px">Imagens na nuvem</h3>
+          <p class="text-muted text-sm">Suas fotos são armazenadas no Azure Blob Storage com segurança.</p>
+        </div>
+        <div class="card card-body" style="text-align:center">
+          <div style="font-size:2rem;margin-bottom:8px">📊</div>
+          <h3 style="font-size:1rem;margin-bottom:6px">Painel de anúncios</h3>
+          <p class="text-muted text-sm">Gerencie seus produtos, preços e estoque em um só lugar.</p>
+        </div>
+        <div class="card card-body" style="text-align:center">
+          <div style="font-size:2rem;margin-bottom:8px">💸</div>
+          <h3 style="font-size:1rem;margin-bottom:6px">100% gratuito</h3>
+          <p class="text-muted text-sm">Sem taxa de cadastro, sem mensalidade. Você só vende.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/azure-config.js"></script><script src="js/services.js"></script><script src="js/ui.js"></script>
+  <script>
+    renderHeader(false);
+    function renderCTA() {
+      const cliente = SessionService.getCliente();
+      const cta = document.getElementById('cta-area');
+      if (!cliente) {
+        cta.innerHTML = `
+          <p class="text-muted text-sm" style="margin-bottom:14px">Você precisa ter uma conta para se tornar vendedor.</p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+            <button class="btn btn-seller btn-lg" onclick="location.href='login.html'">Criar conta →</button>
+            <button class="btn btn-ghost btn-lg" onclick="location.href='login.html'">Já tenho conta</button>
+          </div>`;
+        return;
+      }
+      if (SellerService.isSeller(cliente)) {
+        cta.innerHTML = `
+          <div class="alert alert-seller" style="display:inline-flex;margin-bottom:14px">✓ Você já é um vendedor NuvemMart!</div><br>
+          <button class="btn btn-seller btn-lg" onclick="location.href='vendedor.html'">Ir para Meus Anúncios →</button>`;
+        return;
+      }
+      cta.innerHTML = `
+        <p class="text-muted text-sm" style="margin-bottom:14px">Olá, <strong>${cliente.Nome.split(' ')[0]}</strong>! Clique abaixo para ativar sua conta de vendedor.</p>
+        <button class="btn btn-seller btn-lg" id="become-btn" onclick="becomeSeller()">🏪 Ativar conta de vendedor</button>`;
+    }
+    async function becomeSeller() {
+      const btn = document.getElementById('become-btn');
+      btn.disabled = true; btn.textContent = 'Ativando...';
+      try {
+        await initStorage();
+        await SellerService.becomeSeller(SessionService.getCliente().RowKey);
+        showToast('Parabéns! Você agora é um vendedor!', 'success');
+        setTimeout(() => location.href = 'vendedor.html', 800);
+      } catch(e) { showToast(e.message, 'error'); btn.disabled = false; btn.textContent = '🏪 Ativar conta de vendedor'; }
+    }
+    initStorage().then(renderCTA);
+  </script>
+</body>
+</html>

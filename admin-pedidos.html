@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Pedidos</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper">
+    <div class="container">
+      <div class="page-header mt-2">
+        <h2>Pedidos</h2>
+      </div>
+
+      <div class="stats-row" style="margin-bottom:24px" id="order-stats">
+        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="s-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">Receita</div><div class="stat-value" id="s-receita" style="font-size:1.5rem;color:var(--success)">—</div></div>
+        <div class="stat-card"><div class="stat-label">Confirmados</div><div class="stat-value" id="s-confirmados" style="color:var(--success)">—</div></div>
+        <div class="stat-card"><div class="stat-label">Ticket Médio</div><div class="stat-value" id="s-ticket" style="font-size:1.4rem;color:var(--accent3)">—</div></div>
+      </div>
+
+      <div class="search-bar" style="margin-bottom:20px">
+        <div class="form-group" style="flex:1"><label>Buscar</label><input type="text" id="s-q" placeholder="Cliente ou ID do pedido..." oninput="filterOrders()"></div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="s-status" onchange="filterOrders()">
+            <option value="">Todos</option>
+            <option value="Confirmado">Confirmado</option>
+            <option value="Cancelado">Cancelado</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>ID Pedido</th><th>Cliente</th><th>Data</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Entrega</th><th>Status</th></tr></thead>
+          <tbody id="orders-tbody">
+            <tr><td colspan="8" style="text-align:center;padding:40px"><div class="loader" style="border-top-color:var(--accent3)"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/azure-config.js"></script>
+  <script src="js/services.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    renderHeader(true);
+    let allOrders = [];
+
+    async function loadOrders() {
+      await initStorage();
+      allOrders = await PedidosService.listar();
+      allOrders.sort((a,b) => (b.DataPedido > a.DataPedido) ? 1 : -1);
+
+      const total = allOrders.length;
+      const receita = allOrders.reduce((s,p) => s + parseFloat(p.Total||0), 0);
+      const confirmados = allOrders.filter(p => p.Status === 'Confirmado').length;
+      const ticket = total > 0 ? receita / total : 0;
+      document.getElementById('s-total').textContent = total;
+      document.getElementById('s-receita').textContent = formatCurrency(receita);
+      document.getElementById('s-confirmados').textContent = confirmados;
+      document.getElementById('s-ticket').textContent = formatCurrency(ticket);
+
+      renderTable(allOrders);
+    }
+
+    function renderTable(pedidos) {
+      const tbody = document.getElementById('orders-tbody');
+      if (pedidos.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📋</div><h3>Nenhum pedido</h3></div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = pedidos.map(p => {
+        const itens = JSON.parse(p.Itens || '[]');
+        const payLabels = { pix:'PIX ⚡', cartao:'Cartão 💳', boleto:'Boleto 📄' };
+        const delLabels = { pac:'PAC 📦', sedex:'SEDEX 🚀', retirada:'Retirada 🏪' };
+        return `<tr>
+          <td><span style="font-family:var(--font-mono);font-size:0.78rem;color:var(--accent3)">${p.RowKey.slice(0,16)}...</span></td>
+          <td><span style="font-weight:500">${p.ClienteNome || '—'}</span></td>
+          <td class="text-sm text-muted">${formatDate(p.DataPedido)}</td>
+          <td>
+            <div class="text-sm">${itens.length} item(ns)</div>
+            <div class="text-xs text-muted" style="max-width:200px">${itens.map(i=>`${i.nome}×${i.quantidade}`).join(', ')}</div>
+          </td>
+          <td><span style="font-weight:700;color:var(--success)">${formatCurrency(p.Total)}</span></td>
+          <td class="text-sm">${payLabels[p.MetodoPagamento] || p.MetodoPagamento}</td>
+          <td class="text-sm">${delLabels[p.MetodoEntrega] || p.MetodoEntrega}</td>
+          <td><span class="badge ${p.Status === 'Confirmado' ? 'badge-success' : 'badge-danger'}">${p.Status}</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    function filterOrders() {
+      const q = document.getElementById('s-q').value.toLowerCase();
+      const status = document.getElementById('s-status').value;
+      renderTable(allOrders.filter(p =>
+        (p.ClienteNome?.toLowerCase().includes(q) || p.RowKey?.toLowerCase().includes(q)) &&
+        (!status || p.Status === status)
+      ));
+    }
+
+    loadOrders();
+  </script>
+</body>
+</html>

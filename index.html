@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NuvemMart — Compre e Venda na Nuvem</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper" style="padding-top:0">
+    <div class="hero">
+      <div class="hero-bg"></div>
+      <div class="container">
+        <div class="hero-content">
+          <div class="hero-tag">☁️ Powered by Azure Cloud</div>
+          <h1>Compre e venda<br>na nuvem</h1>
+          <p>Produtos com qualidade, entrega rápida e total segurança. Qualquer pessoa pode vender — é só criar uma conta.</p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-lg" onclick="location.href='produtos.html'">Ver Produtos →</button>
+            <button class="btn btn-seller btn-lg" onclick="location.href='seja-vendedor.html'">🏪 Quero Vender</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="container" style="padding-top:32px">
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Produtos</div><div class="stat-value" id="stat-produtos">—</div></div>
+        <div class="stat-card"><div class="stat-label">Clientes</div><div class="stat-value" id="stat-clientes">—</div></div>
+        <div class="stat-card"><div class="stat-label">Pedidos</div><div class="stat-value" id="stat-pedidos">—</div></div>
+        <div class="stat-card"><div class="stat-label">Storage</div><div class="stat-value" style="color:var(--accent);font-size:1.2rem">Azure ☁️</div></div>
+      </div>
+      <div class="seller-banner">
+        <div class="seller-banner-icon">🏪</div>
+        <div><h3>Venda seus produtos aqui</h3><p>Seja vendedor com um clique e comece a anunciar agora mesmo. Sem taxa de adesão.</p></div>
+        <button class="btn btn-seller btn-lg" onclick="location.href='seja-vendedor.html'">Começar a vender →</button>
+      </div>
+      <div class="page-header"><h2>Destaques</h2><a href="produtos.html" class="btn btn-ghost btn-sm">Ver todos →</a></div>
+      <div class="products-grid" id="featured-grid"><div style="grid-column:1/-1;text-align:center;padding:40px"><div class="loader"></div></div></div>
+    </div>
+  </div>
+  <script src="js/azure-config.js"></script><script src="js/services.js"></script><script src="js/ui.js"></script>
+  <script>
+    renderHeader(false);
+    async function loadHome() {
+      await initStorage();
+      const [produtos, clientes, pedidos] = await Promise.all([ProdutosService.listar(), ClientesService.listar(), PedidosService.listar()]);
+      document.getElementById('stat-produtos').textContent = produtos.length;
+      document.getElementById('stat-clientes').textContent = clientes.length;
+      document.getElementById('stat-pedidos').textContent = pedidos.length;
+      const featured = produtos.filter(p => p.Ativo !== false && parseInt(p.Quantidade) > 0).slice(0, 8);
+      const grid = document.getElementById('featured-grid');
+      if (!featured.length) { grid.innerHTML = `<div style="grid-column:1/-1" class="empty-state"><div class="icon">📦</div><h3>Nenhum produto cadastrado</h3></div>`; return; }
+      grid.innerHTML = featured.map(p => productCard(p)).join('');
+    }
+    function productCard(p) {
+      const img = p.ImagemUrl ? `<img class="product-img" src="${getBlobUrl(p.ImagemUrl)}" alt="${p.Modelo}" onerror="this.parentElement.innerHTML='<div class=product-img-placeholder>📦</div>'">` : `<div class="product-img-placeholder">📦</div>`;
+      const stock = parseInt(p.Quantidade);
+      return `<div class="product-card">${img}<div class="product-info">
+        <div class="product-brand">${p.Marca}</div>
+        <div class="product-name">${p.Modelo}</div>
+        ${p.VendedorNome ? `<div class="product-seller-badge">🏪 ${p.VendedorNome}</div>` : ''}
+        ${p.Descricao ? `<div class="text-muted text-sm" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${p.Descricao}</div>` : ''}
+        <div class="product-price">${formatCurrency(p.Valor)}</div>
+        <div class="product-stock">${stock > 0 ? `${stock} em estoque` : '<span style="color:var(--danger)">Indisponível</span>'}</div>
+      </div><div class="product-actions">
+        ${stock > 0 ? `<button class="btn btn-primary btn-sm" style="flex:1" onclick='addToCart(${JSON.stringify(p).replace(/'/g,"&#39;")})'>+ Carrinho</button>` : `<button class="btn btn-ghost btn-sm" style="flex:1" disabled>Indisponível</button>`}
+        <button class="btn btn-ghost btn-sm" onclick="location.href='produto.html?id=${p.RowKey}'">Ver</button>
+      </div></div>`;
+    }
+    function addToCart(p) { CartService.add(p); showToast(`${p.Marca} ${p.Modelo} adicionado!`, 'success'); }
+    loadHome();
+  </script>
+</body>
+</html>

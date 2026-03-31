@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minha Conta — NuvemMart</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper">
+    <div class="container">
+      <div class="page-header mt-2">
+        <h2>Minha Conta</h2>
+      </div>
+
+      <div class="profile-grid">
+        <!-- Sidebar -->
+        <div class="profile-card">
+          <div class="profile-avatar" id="user-avatar">?</div>
+          <div style="font-weight:600;font-size:1.1rem" id="user-name">—</div>
+          <div class="text-muted text-sm" id="user-email">—</div>
+          <div class="divider"></div>
+          <nav style="display:flex;flex-direction:column;gap:4px">
+            <button class="tab-btn active" onclick="showSection('pedidos',this)" style="text-align:left;width:100%;padding:10px 12px;border-radius:var(--radius-sm)">📦 Meus Pedidos</button>
+            <button class="tab-btn" onclick="showSection('dados',this)" style="text-align:left;width:100%;padding:10px 12px;border-radius:var(--radius-sm)">👤 Meus Dados</button>
+          </nav>
+          <div class="divider"></div>
+          <button class="btn btn-ghost btn-sm btn-full" onclick="doLogout()">Sair</button>
+        </div>
+
+        <!-- Content -->
+        <div id="account-content">
+          <div style="text-align:center;padding:64px"><div class="loader" style="border-top-color:var(--accent3)"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/azure-config.js"></script>
+  <script src="js/services.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    renderHeader(false);
+    let currentCliente = null;
+    let currentSection = 'pedidos';
+
+    async function loadAccount() {
+      const c = SessionService.getCliente();
+      if (!c) { location.href = 'login.html'; return; }
+      await initStorage();
+      // Refresh from storage
+      currentCliente = (await ClientesService.buscarPorId(c.RowKey)) || c;
+      SessionService.setCliente(currentCliente);
+
+      document.getElementById('user-avatar').textContent = currentCliente.Nome?.[0] || '?';
+      document.getElementById('user-name').textContent = currentCliente.Nome;
+      document.getElementById('user-email').textContent = currentCliente.Email;
+
+      showSection(currentSection, document.querySelector('.tab-btn.active'));
+    }
+
+    function showSection(name, btn) {
+      currentSection = name;
+      document.querySelectorAll('.profile-card .tab-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      if (name === 'pedidos') renderPedidos();
+      else renderDados();
+    }
+
+    async function renderPedidos() {
+      const el = document.getElementById('account-content');
+      el.innerHTML = `<div style="text-align:center;padding:40px"><div class="loader" style="border-top-color:var(--accent3)"></div></div>`;
+      const pedidos = await ClientesService.historicoPedidos(currentCliente.RowKey);
+      if (pedidos.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h3>Nenhum pedido ainda</h3><p class="text-muted text-sm">Seus pedidos aparecerão aqui</p><button class="btn btn-primary mt-2" onclick="location.href='produtos.html'">Comprar agora →</button></div>`;
+        return;
+      }
+      el.innerHTML = pedidos.sort((a,b) => b.DataPedido > a.DataPedido ? 1 : -1).map(p => {
+        const itens = JSON.parse(p.Itens || '[]');
+        const statusColor = p.Status === 'Confirmado' ? 'badge-success' : 'badge-purple';
+        return `<div class="card" style="margin-bottom:12px">
+          <div class="card-body">
+            <div class="flex justify-between items-center" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text2)">${p.RowKey}</div>
+                <div style="font-size:0.85rem;color:var(--text2)">${formatDate(p.DataPedido)}</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <span class="badge ${statusColor}">${p.Status}</span>
+                <span style="font-family:var(--font-display);font-size:1.3rem;color:var(--success)">${formatCurrency(p.Total)}</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              ${itens.map(i => `<div class="text-sm text-muted">${i.nome} × ${i.quantidade} — ${formatCurrency(i.valor * i.quantidade)}</div>`).join('')}
+            </div>
+            <div class="divider"></div>
+            <div class="flex gap-3 text-sm text-muted">
+              <span>💳 ${({pix:'PIX',cartao:'Cartão',boleto:'Boleto'})[p.MetodoPagamento]||p.MetodoPagamento}</span>
+              <span>📦 ${({pac:'PAC',sedex:'SEDEX',retirada:'Retirada'})[p.MetodoEntrega]||p.MetodoEntrega}</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderDados() {
+      const c = currentCliente;
+      document.getElementById('account-content').innerHTML = `
+        <div class="card">
+          <div class="card-body">
+            <div class="page-header" style="margin-bottom:20px">
+              <h3 style="font-family:var(--font-body);font-size:1.1rem;font-weight:600">Dados pessoais</h3>
+              <button class="btn btn-secondary btn-sm" id="edit-btn" onclick="toggleEdit()">Editar</button>
+            </div>
+            <div id="dados-form" style="display:flex;flex-direction:column;gap:14px">
+              <div class="form-row cols-2">
+                <div class="form-group"><label>Nome</label><input type="text" id="d-nome" value="${c.Nome||''}" readonly></div>
+                <div class="form-group"><label>CPF</label><input type="text" id="d-cpf" value="${c.CPF||''}" readonly></div>
+              </div>
+              <div class="form-row cols-2">
+                <div class="form-group"><label>E-mail</label><input type="email" id="d-email" value="${c.Email||''}" readonly></div>
+                <div class="form-group"><label>Telefone</label><input type="text" id="d-tel" value="${c.Telefone||''}" readonly></div>
+              </div>
+              <div class="form-group"><label>Endereço</label><input type="text" id="d-end" value="${c.Endereco||''}" readonly></div>
+              <div class="form-row cols-2">
+                <div class="form-group"><label>Cidade</label><input type="text" id="d-cidade" value="${c.Cidade||''}" readonly></div>
+                <div class="form-group"><label>CEP</label><input type="text" id="d-cep" value="${c.CEP||''}" readonly></div>
+              </div>
+            </div>
+            <div id="save-bar" style="display:none;margin-top:16px">
+              <button class="btn btn-primary" onclick="saveData()">Salvar alterações</button>
+              <button class="btn btn-ghost" onclick="toggleEdit(true)" style="margin-left:8px">Cancelar</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    let editMode = false;
+    function toggleEdit(cancel = false) {
+      editMode = !editMode;
+      if (cancel) editMode = false;
+      const inputs = document.querySelectorAll('#dados-form input');
+      inputs.forEach(i => { if (i.id !== 'd-cpf') i.readOnly = !editMode; });
+      document.getElementById('edit-btn').textContent = editMode ? 'Cancelar' : 'Editar';
+      document.getElementById('save-bar').style.display = editMode ? 'block' : 'none';
+      if (cancel) renderDados();
+    }
+
+    async function saveData() {
+      showLoader('Salvando...');
+      try {
+        const updated = await ClientesService.atualizar(currentCliente.RowKey, {
+          nome: document.getElementById('d-nome').value,
+          email: document.getElementById('d-email').value,
+          telefone: document.getElementById('d-tel').value,
+          endereco: document.getElementById('d-end').value,
+          cidade: document.getElementById('d-cidade').value,
+          cep: document.getElementById('d-cep').value,
+          cpf: currentCliente.CPF,
+        });
+        currentCliente = updated;
+        SessionService.setCliente(updated);
+        showToast('Dados atualizados!', 'success');
+        document.getElementById('user-name').textContent = updated.Nome;
+        renderDados();
+      } catch(e) { showToast(e.message, 'error'); }
+      finally { hideLoader(); }
+    }
+
+    initStorage().then(loadAccount);
+  </script>
+</body>
+</html>

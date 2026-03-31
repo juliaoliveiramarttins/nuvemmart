@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meus Anúncios — NuvemMart</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper">
+    <div class="container">
+      <div class="page-header mt-2">
+        <h2>Meus Anúncios</h2>
+        <button class="btn btn-seller" onclick="openProductModal()">+ Novo Anúncio</button>
+      </div>
+
+      <div class="seller-stats" id="seller-stats">
+        <div class="seller-stat"><div class="stat-label">Anúncios</div><div class="stat-value" id="s-anuncios">—</div></div>
+        <div class="seller-stat"><div class="stat-label">Em estoque</div><div class="stat-value" id="s-estoque">—</div></div>
+        <div class="seller-stat"><div class="stat-label">Sem estoque</div><div class="stat-value" id="s-semestoque">—</div></div>
+      </div>
+
+      <div class="products-grid" id="seller-grid">
+        <div style="grid-column:1/-1;text-align:center;padding:40px"><div class="loader" style="border-top-color:var(--seller)"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal produto -->
+  <div class="modal-overlay" id="product-modal">
+    <div class="modal">
+      <div class="modal-header" style="background:var(--seller-bg)">
+        <h3 id="modal-title" style="color:var(--seller)">Novo Anúncio</h3>
+        <button class="modal-close" onclick="closeModal('product-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="p-id">
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Marca *</label><input type="text" id="p-marca" placeholder="Ex: Apple"></div>
+          <div class="form-group"><label>Modelo *</label><input type="text" id="p-modelo" placeholder="Ex: Iphone 17 Pro Max 256gb"></div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Valor (R$) *</label><input type="number" id="p-valor" step="0.01" min="0"></div>
+          <div class="form-group"><label>Quantidade *</label><input type="number" id="p-qtd" min="0"></div>
+        </div>
+        <div class="form-group"><label>Descrição</label><textarea id="p-desc" placeholder="Descreva seu produto..."></textarea></div>
+        <div class="form-group">
+          <label>Foto do produto</label>
+          <div class="file-input-wrapper">
+            <input type="file" id="p-foto" accept="image/*" onchange="previewImage(this)">
+            <div class="file-input-label" id="file-label">
+              <div style="font-size:1.5rem;margin-bottom:6px">📷</div>
+              <div>Clique para selecionar a foto</div>
+              <div style="font-size:.75rem;color:var(--text3);margin-top:2px">JPG, PNG, WebP — máx. 5MB</div>
+            </div>
+          </div>
+          <img id="img-preview" style="display:none;width:100%;max-height:180px;object-fit:contain;border-radius:var(--radius-sm);margin-top:8px;border:1px solid var(--border);background:var(--bg3);padding:6px">
+        </div>
+        <div id="modal-error"></div>
+      </div>
+      <div class="modal-footer" style="background:var(--seller-bg)">
+        <button class="btn btn-ghost" onclick="closeModal('product-modal')">Cancelar</button>
+        <button class="btn btn-seller" onclick="saveProduct()" id="save-btn">Publicar Anúncio</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/azure-config.js"></script><script src="js/services.js"></script><script src="js/ui.js"></script>
+  <script>
+    renderHeader(false);
+    let myProdutos = [];
+    let currentCliente = null;
+
+    async function loadDashboard() {
+      const c = SessionService.getCliente();
+      if (!c) { location.href = 'login.html'; return; }
+      if (!SellerService.isSeller(c)) { location.href = 'seja-vendedor.html'; return; }
+      await initStorage();
+      currentCliente = c;
+      const todos = await ProdutosService.listar();
+      myProdutos = todos.filter(p => p.VendedorId === c.RowKey);
+      document.getElementById('s-anuncios').textContent = myProdutos.length;
+      document.getElementById('s-estoque').textContent = myProdutos.filter(p => parseInt(p.Quantidade) > 0).length;
+      document.getElementById('s-semestoque').textContent = myProdutos.filter(p => parseInt(p.Quantidade) === 0).length;
+      renderGrid();
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById('seller-grid');
+      if (!myProdutos.length) {
+        grid.innerHTML = `<div style="grid-column:1/-1" class="empty-state"><div class="icon">📦</div><h3>Nenhum anúncio ainda</h3><p class="text-muted text-sm">Clique em "+ Novo Anúncio" para começar</p></div>`;
+        return;
+      }
+      grid.innerHTML = myProdutos.map(p => {
+        const img = p.ImagemUrl ? `<img class="product-img" src="${getBlobUrl(p.ImagemUrl)}" alt="${p.Modelo}" onerror="this.parentElement.innerHTML='<div class=product-img-placeholder>📦</div>'">` : `<div class="product-img-placeholder">📦</div>`;
+        const stock = parseInt(p.Quantidade);
+        return `<div class="product-card" style="border-color:var(--seller-border)">
+          ${img}
+          <div class="product-info">
+            <div class="product-brand" style="color:var(--seller)">${p.Marca}</div>
+            <div class="product-name">${p.Modelo}</div>
+            <div class="product-price">${formatCurrency(p.Valor)}</div>
+            <div class="product-stock">${stock > 0 ? `${stock} em estoque` : '<span style="color:var(--danger)">Sem estoque</span>'}</div>
+          </div>
+          <div class="product-actions">
+            <button class="btn btn-seller btn-sm" style="flex:1" onclick='editProduct(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️ Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.RowKey}','${p.Modelo}')">🗑️</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function openProductModal(p = null) {
+      document.getElementById('modal-title').textContent = p ? 'Editar Anúncio' : 'Novo Anúncio';
+      document.getElementById('p-id').value = p?.RowKey || '';
+      document.getElementById('p-marca').value = p?.Marca || '';
+      document.getElementById('p-modelo').value = p?.Modelo || '';
+      document.getElementById('p-valor').value = p?.Valor || '';
+      document.getElementById('p-qtd').value = p?.Quantidade || '';
+      document.getElementById('p-desc').value = p?.Descricao || '';
+      document.getElementById('p-foto').value = '';
+      document.getElementById('modal-error').innerHTML = '';
+      const prev = document.getElementById('img-preview');
+      const lbl = document.getElementById('file-label');
+      if (p?.ImagemUrl) { prev.src = getBlobUrl(p.ImagemUrl); prev.style.display = 'block'; lbl.innerHTML = `<div style="font-size:1rem;color:var(--seller)">✓ Imagem atual. Selecione para trocar.</div>`; }
+      else { prev.style.display = 'none'; lbl.innerHTML = `<div style="font-size:1.5rem;margin-bottom:6px">📷</div><div>Clique para selecionar a foto</div>`; }
+      openModal('product-modal');
+    }
+    function editProduct(p) { openProductModal(p); }
+
+    function previewImage(input) {
+      const file = input.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        const prev = document.getElementById('img-preview');
+        prev.src = e.target.result; prev.style.display = 'block';
+        document.getElementById('file-label').innerHTML = `<div style="color:var(--seller);font-size:.9rem">✓ ${file.name}</div>`;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function saveProduct() {
+      const id = document.getElementById('p-id').value;
+      const marca = document.getElementById('p-marca').value.trim();
+      const modelo = document.getElementById('p-modelo').value.trim();
+      const valor = document.getElementById('p-valor').value;
+      const qtd = document.getElementById('p-qtd').value;
+      const errEl = document.getElementById('modal-error');
+      errEl.innerHTML = '';
+      if (!marca || !modelo || !valor || qtd === '') { errEl.innerHTML = `<div class="alert alert-error">Preencha todos os campos obrigatórios.</div>`; return; }
+      const foto = document.getElementById('p-foto').files[0];
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true; btn.innerHTML = `<div class="loader" style="border-top-color:var(--seller)"></div> Publicando...`;
+      showLoader('Publicando anúncio...');
+      try {
+        const data = { marca, modelo, valor, quantidade: qtd, descricao: document.getElementById('p-desc').value, vendedorId: currentCliente.RowKey, vendedorNome: currentCliente.Nome };
+        if (id) {
+          if (!foto) { const ex = myProdutos.find(p => p.RowKey === id); data.imagemUrl = ex?.ImagemUrl || ''; }
+          await ProdutosService.atualizar(id, data, foto || null);
+          showToast('Anúncio atualizado!', 'success');
+        } else {
+          await ProdutosService.salvar(data, foto || null);
+          showToast('Anúncio publicado!', 'success');
+        }
+        closeModal('product-modal');
+        await loadDashboard();
+      } catch(e) { errEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = 'Publicar Anúncio'; hideLoader(); }
+    }
+
+    async function deleteProduct(id, nome) {
+      if (!await confirmDialog(`Excluir anúncio "${nome}"?`)) return;
+      showLoader('Excluindo...');
+      try { await ProdutosService.excluir(id); showToast('Anúncio removido.', 'success'); await loadDashboard(); }
+      catch(e) { showToast(e.message, 'error'); } finally { hideLoader(); }
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>

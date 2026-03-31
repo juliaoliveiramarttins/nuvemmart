@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Produtos</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper">
+    <div class="container">
+      <div class="page-header mt-2">
+        <h2>Produtos</h2>
+        <button class="btn btn-primary" onclick="openProductModal()">+ Novo Produto</button>
+      </div>
+
+      <div class="search-bar" style="margin-bottom:20px">
+        <div class="form-group" style="flex:1"><label>Buscar</label><input type="text" id="s-q" placeholder="Marca ou modelo..." oninput="filterTable()"></div>
+        <div class="form-group"><label>Preço máx.</label><input type="number" id="s-max" placeholder="9999" oninput="filterTable()"></div>
+      </div>
+
+      <div class="table-wrapper">
+        <table id="produtos-table">
+          <thead><tr>
+            <th>Foto</th><th>Marca</th><th>Modelo</th><th>Valor</th><th>Estoque</th><th>Status</th><th>Ações</th>
+          </tr></thead>
+          <tbody id="produtos-tbody">
+            <tr><td colspan="7" style="text-align:center;padding:40px"><div class="loader" style="border-top-color:var(--accent3)"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal novo/editar produto -->
+  <div class="modal-overlay" id="product-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">Novo Produto</h3>
+        <button class="modal-close" onclick="closeModal('product-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="p-id">
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Marca *</label><input type="text" id="p-marca" placeholder="Ex: Apple"></div>
+          <div class="form-group"><label>Modelo *</label><input type="text" id="p-modelo" placeholder="Ex: Iphone 17 Pro Max 256gb"></div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Valor (R$) *</label><input type="number" id="p-valor" step="0.01" min="0" placeholder="0.00"></div>
+          <div class="form-group"><label>Quantidade *</label><input type="number" id="p-qtd" min="0" placeholder="0"></div>
+        </div>
+        <div class="form-group"><label>Descrição</label><textarea id="p-desc" placeholder="Descrição do produto..."></textarea></div>
+        <div class="form-group">
+          <label>Foto do produto</label>
+          <div class="file-input-wrapper">
+            <input type="file" id="p-foto" accept="image/*" onchange="previewImage(this)">
+            <div class="file-input-label" id="file-label">
+              <div style="font-size:1.5rem;margin-bottom:6px">📷</div>
+              <div>Clique para selecionar ou arraste a imagem</div>
+              <div style="font-size:0.75rem;color:var(--text3);margin-top:2px">JPG, PNG, WebP — máx. 5MB</div>
+            </div>
+          </div>
+          <img id="img-preview" style="display:none;width:100%;max-height:200px;object-fit:cover;border-radius:var(--radius-sm);margin-top:8px">
+        </div>
+        <div id="modal-error"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('product-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveProduct()" id="save-btn">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/azure-config.js"></script>
+  <script src="js/services.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    renderHeader(true);
+    let allProdutos = [];
+
+    async function loadProdutos() {
+      await initStorage();
+      allProdutos = await ProdutosService.listar();
+      renderTable(allProdutos);
+    }
+
+    function renderTable(produtos) {
+      const tbody = document.getElementById('produtos-tbody');
+      if (produtos.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">📦</div><h3>Nenhum produto cadastrado</h3></div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = produtos.map(p => {
+        const img = p.ImagemUrl
+          ? `<img src="${getBlobUrl(p.ImagemUrl)}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;background:var(--bg2)" onerror="this.style.display='none'">`
+          : `<div style="width:48px;height:48px;background:var(--bg2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.2rem">📦</div>`;
+        const stock = parseInt(p.Quantidade);
+        const stockBadge = stock === 0 ? `<span class="badge badge-danger">Sem estoque</span>`
+          : stock < 5 ? `<span class="badge badge-warn">${stock} restantes</span>`
+          : `<span class="badge badge-success">${stock} un.</span>`;
+        return `<tr>
+          <td>${img}</td>
+          <td>${p.Marca}</td>
+          <td><span style="font-weight:500">${p.Modelo}</span>${p.Descricao ? `<div class="text-xs text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.Descricao}</div>` : ''}</td>
+          <td>${formatCurrency(p.Valor)}</td>
+          <td>${stockBadge}</td>
+          <td><span class="badge ${p.Ativo !== false ? 'badge-success' : 'badge-danger'}">${p.Ativo !== false ? 'Ativo' : 'Inativo'}</span></td>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick='editProduct(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.RowKey}','${p.Marca} ${p.Modelo}')">🗑️</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    function filterTable() {
+      const q = document.getElementById('s-q').value.toLowerCase();
+      const max = parseFloat(document.getElementById('s-max').value) || Infinity;
+      renderTable(allProdutos.filter(p =>
+        (p.Marca?.toLowerCase().includes(q) || p.Modelo?.toLowerCase().includes(q)) &&
+        parseFloat(p.Valor) <= max
+      ));
+    }
+
+    function openProductModal(p = null) {
+      document.getElementById('modal-title').textContent = p ? 'Editar Produto' : 'Novo Produto';
+      document.getElementById('p-id').value = p?.RowKey || '';
+      document.getElementById('p-marca').value = p?.Marca || '';
+      document.getElementById('p-modelo').value = p?.Modelo || '';
+      document.getElementById('p-valor').value = p?.Valor || '';
+      document.getElementById('p-qtd').value = p?.Quantidade || '';
+      document.getElementById('p-desc').value = p?.Descricao || '';
+      document.getElementById('file-label').innerHTML = p?.ImagemUrl
+        ? `<div style="font-size:1.5rem;margin-bottom:6px">✅</div><div>Imagem atual mantida. Selecione para substituir.</div>`
+        : `<div style="font-size:1.5rem;margin-bottom:6px">📷</div><div>Clique para selecionar ou arraste a imagem</div><div style="font-size:0.75rem;color:var(--text3);margin-top:2px">JPG, PNG, WebP — máx. 5MB</div>`;
+      const prev = document.getElementById('img-preview');
+      if (p?.ImagemUrl) { prev.src = getBlobUrl(p.ImagemUrl); prev.style.display = 'block'; }
+      else { prev.style.display = 'none'; prev.src = ''; }
+      document.getElementById('p-foto').value = '';
+      document.getElementById('modal-error').innerHTML = '';
+      openModal('product-modal');
+    }
+
+    function editProduct(p) { openProductModal(p); }
+
+    function previewImage(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        const prev = document.getElementById('img-preview');
+        prev.src = e.target.result;
+        prev.style.display = 'block';
+        document.getElementById('file-label').innerHTML = `<div style="font-size:1rem;color:var(--success)">✓ ${file.name}</div>`;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function saveProduct() {
+      const id = document.getElementById('p-id').value;
+      const marca = document.getElementById('p-marca').value.trim();
+      const modelo = document.getElementById('p-modelo').value.trim();
+      const valor = document.getElementById('p-valor').value;
+      const qtd = document.getElementById('p-qtd').value;
+      const errEl = document.getElementById('modal-error');
+      errEl.innerHTML = '';
+      if (!marca || !modelo || !valor || qtd === '') {
+        errEl.innerHTML = `<div class="alert alert-error">Preencha todos os campos obrigatórios.</div>`; return;
+      }
+      const foto = document.getElementById('p-foto').files[0];
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true; btn.innerHTML = `<div class="loader"></div> Salvando...`;
+      showLoader('Salvando produto...');
+      try {
+        const data = { marca, modelo, valor, quantidade: qtd, descricao: document.getElementById('p-desc').value };
+        if (id) {
+          // keep existing image if no new file
+          if (!foto) {
+            const existing = allProdutos.find(p => p.RowKey === id);
+            data.imagemUrl = existing?.ImagemUrl || '';
+          }
+          await ProdutosService.atualizar(id, data, foto || null);
+          showToast('Produto atualizado!', 'success');
+        } else {
+          await ProdutosService.salvar(data, foto || null);
+          showToast('Produto cadastrado!', 'success');
+        }
+        closeModal('product-modal');
+        await loadProdutos();
+      } catch(e) {
+        errEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Salvar';
+        hideLoader();
+      }
+    }
+
+    async function deleteProduct(id, nome) {
+      if (!await confirmDialog(`Excluir "${nome}"? Esta ação não pode ser desfeita.`)) return;
+      showLoader('Excluindo...');
+      try {
+        await ProdutosService.excluir(id);
+        showToast('Produto excluído.', 'success');
+        await loadProdutos();
+      } catch(e) { showToast(e.message, 'error'); }
+      finally { hideLoader(); }
+    }
+
+    loadProdutos();
+  </script>
+</body>
+</html>

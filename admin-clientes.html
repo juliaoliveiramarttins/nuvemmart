@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Clientes</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app-header"></div>
+  <div class="page-wrapper">
+    <div class="container">
+      <div class="page-header mt-2">
+        <h2>Clientes</h2>
+        <button class="btn btn-primary" onclick="openClientModal()">+ Novo Cliente</button>
+      </div>
+      <div class="search-bar" style="margin-bottom:20px">
+        <div class="form-group" style="flex:1"><label>Buscar</label><input type="text" id="s-q" placeholder="Nome, e-mail ou CPF..." oninput="filterClients()"></div>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>Nome</th><th>E-mail</th><th>CPF</th><th>Telefone</th><th>Cidade</th><th>Cadastro</th><th>Pedidos</th><th>Ações</th></tr></thead>
+          <tbody id="clients-tbody">
+            <tr><td colspan="8" style="text-align:center;padding:40px"><div class="loader" style="border-top-color:var(--accent3)"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client modal -->
+  <div class="modal-overlay" id="client-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="client-modal-title">Novo Cliente</h3>
+        <button class="modal-close" onclick="closeModal('client-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="c-id">
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Nome *</label><input type="text" id="c-nome" placeholder="Nome completo"></div>
+          <div class="form-group"><label>CPF *</label><input type="text" id="c-cpf" placeholder="000.000.000-00" maxlength="14"></div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label>E-mail *</label><input type="email" id="c-email" placeholder="email@dominio.com"></div>
+          <div class="form-group"><label>Telefone</label><input type="text" id="c-tel" placeholder="(11) 9 0000-0000"></div>
+        </div>
+        <div class="form-group"><label>Endereço</label><input type="text" id="c-end" placeholder="Rua, número, bairro"></div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Cidade</label><input type="text" id="c-cidade" placeholder="Cidade"></div>
+          <div class="form-group"><label>CEP</label><input type="text" id="c-cep" placeholder="00000-000" maxlength="9"></div>
+        </div>
+        <div id="client-modal-error"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('client-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveClient()" id="save-client-btn">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History modal -->
+  <div class="modal-overlay" id="history-modal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-header">
+        <h3 id="history-title">Histórico de Pedidos</h3>
+        <button class="modal-close" onclick="closeModal('history-modal')">✕</button>
+      </div>
+      <div class="modal-body" id="history-body" style="max-height:60vh;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <script src="js/azure-config.js"></script>
+  <script src="js/services.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    renderHeader(true);
+    let allClients = [];
+    let orderCounts = {};
+
+    async function loadClients() {
+      await initStorage();
+      const [clientes, pedidos] = await Promise.all([ClientesService.listar(), PedidosService.listar()]);
+      allClients = clientes;
+      orderCounts = {};
+      pedidos.forEach(p => { orderCounts[p.ClienteId] = (orderCounts[p.ClienteId] || 0) + 1; });
+      renderTable(allClients);
+    }
+
+    function renderTable(clientes) {
+      const tbody = document.getElementById('clients-tbody');
+      if (clientes.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">👥</div><h3>Nenhum cliente cadastrado</h3></div></td></tr>`;
+        return;
+      }
+      tbody.innerHTML = clientes.map(c => `<tr>
+        <td><span style="font-weight:500">${c.Nome}</span></td>
+        <td class="text-sm">${c.Email}</td>
+        <td class="text-sm text-muted">${c.CPF || '—'}</td>
+        <td class="text-sm text-muted">${c.Telefone || '—'}</td>
+        <td class="text-sm text-muted">${c.Cidade || '—'}</td>
+        <td class="text-sm text-muted">${formatDate(c.DataCadastro)}</td>
+        <td><span class="badge ${(orderCounts[c.RowKey]||0) > 0 ? 'badge-purple' : ''}">${orderCounts[c.RowKey] || 0} pedido(s)</span></td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="viewHistory('${c.RowKey}','${c.Nome.replace(/'/g,"\\'")}')">📋</button>
+            <button class="btn btn-ghost btn-sm" onclick='editClient(${JSON.stringify(c).replace(/'/g,"&#39;")})'>✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteClient('${c.RowKey}','${c.Nome.replace(/'/g,"\\'")}')">🗑️</button>
+          </div>
+        </td>
+      </tr>`).join('');
+    }
+
+    function filterClients() {
+      const q = document.getElementById('s-q').value.toLowerCase();
+      renderTable(allClients.filter(c =>
+        c.Nome?.toLowerCase().includes(q) || c.Email?.toLowerCase().includes(q) || c.CPF?.includes(q)
+      ));
+    }
+
+    function openClientModal(c = null) {
+      document.getElementById('client-modal-title').textContent = c ? 'Editar Cliente' : 'Novo Cliente';
+      document.getElementById('c-id').value = c?.RowKey || '';
+      document.getElementById('c-nome').value = c?.Nome || '';
+      document.getElementById('c-cpf').value = c?.CPF || '';
+      document.getElementById('c-email').value = c?.Email || '';
+      document.getElementById('c-tel').value = c?.Telefone || '';
+      document.getElementById('c-end').value = c?.Endereco || '';
+      document.getElementById('c-cidade').value = c?.Cidade || '';
+      document.getElementById('c-cep').value = c?.CEP || '';
+      document.getElementById('client-modal-error').innerHTML = '';
+      openModal('client-modal');
+    }
+    function editClient(c) { openClientModal(c); }
+
+    async function saveClient() {
+      const id = document.getElementById('c-id').value;
+      const nome = document.getElementById('c-nome').value.trim();
+      const cpf = document.getElementById('c-cpf').value.trim();
+      const email = document.getElementById('c-email').value.trim();
+      const errEl = document.getElementById('client-modal-error');
+      errEl.innerHTML = '';
+      if (!nome || !cpf || !email) { errEl.innerHTML = `<div class="alert alert-error">Preencha os campos obrigatórios.</div>`; return; }
+      const btn = document.getElementById('save-client-btn');
+      btn.disabled = true; btn.innerHTML = `<div class="loader"></div> Salvando...`;
+      showLoader('Salvando...');
+      try {
+        const data = { nome, cpf, email, telefone: document.getElementById('c-tel').value, endereco: document.getElementById('c-end').value, cidade: document.getElementById('c-cidade').value, cep: document.getElementById('c-cep').value };
+        if (id) { await ClientesService.atualizar(id, data); showToast('Cliente atualizado!', 'success'); }
+        else { await ClientesService.salvar(data); showToast('Cliente cadastrado!', 'success'); }
+        closeModal('client-modal');
+        await loadClients();
+      } catch(e) { errEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`; }
+      finally { btn.disabled = false; btn.textContent = 'Salvar'; hideLoader(); }
+    }
+
+    async function deleteClient(id, nome) {
+      if (!await confirmDialog(`Excluir cliente "${nome}"? Esta ação não pode ser desfeita.`)) return;
+      showLoader('Excluindo...');
+      try { await ClientesService.excluir(id); showToast('Cliente excluído.', 'success'); await loadClients(); }
+      catch(e) { showToast(e.message, 'error'); } finally { hideLoader(); }
+    }
+
+    async function viewHistory(clienteId, nome) {
+      document.getElementById('history-title').textContent = `Pedidos de ${nome}`;
+      document.getElementById('history-body').innerHTML = `<div style="text-align:center;padding:32px"><div class="loader" style="border-top-color:var(--accent3)"></div></div>`;
+      openModal('history-modal');
+      const pedidos = await ClientesService.historicoPedidos(clienteId);
+      if (pedidos.length === 0) {
+        document.getElementById('history-body').innerHTML = `<div class="empty-state"><div class="icon">📦</div><h3>Nenhum pedido</h3></div>`;
+        return;
+      }
+      document.getElementById('history-body').innerHTML = pedidos.sort((a,b) => b.DataPedido > a.DataPedido ? 1 : -1).map(p => {
+        const itens = JSON.parse(p.Itens || '[]');
+        return `<div style="padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px">
+          <div class="flex justify-between items-center" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
+            <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text2)">${p.RowKey}</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span class="badge badge-success">${p.Status}</span>
+              <span style="font-weight:700;color:var(--success)">${formatCurrency(p.Total)}</span>
+            </div>
+          </div>
+          <div class="text-xs text-muted">${formatDate(p.DataPedido)}</div>
+          ${itens.map(i => `<div class="text-sm" style="margin-top:4px">${i.nome} × ${i.quantidade} — ${formatCurrency(i.valor * i.quantidade)}</div>`).join('')}
+        </div>`;
+      }).join('');
+    }
+
+    loadClients();
+  </script>
+</body>
+</html>
